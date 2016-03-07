@@ -27,25 +27,24 @@ public class RFXClient {
     private static final int LOCK_PERIOD_MILLIS = 30000;
     private static final int SEND_REPEAT = 1500;
     private static final int SEND_ONCE = 0;
+    private static final int RFX_UDP_PORT = 65442;
 
     private static final Logger logger = LoggerFactory.getLogger(RFXClient.class);
 
     private InetAddress host;
-    private int port = 65442;
     DatagramSocket sock = null;
     int packetId = 200;
 
-    public RFXClient(String hostName, int port) {
+    public RFXClient(String hostName) {
         try {
             host = InetAddress.getByName(hostName);
         } catch (UnknownHostException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
         }
-        this.port = port;
     }
 
-    public void send(ProntoECF payload) throws InterruptedException, IOException {
+    public void send(ProntoECF payload, int irPort) throws InterruptedException, IOException {
         logger.debug("Sending ECF payload "
                 + BaseEncoding.base16().withSeparator(" ", 4).encode(new ECFParser().serialise(payload)));
 
@@ -65,7 +64,7 @@ public class RFXClient {
 
             int startPacketId = packetId;
             Start startMessage = new Start();
-            startMessage.setPort(1);
+            startMessage.setPort(irPort);
             startMessage.setPayload(payload);
             startMessage.setLength(payload.getNumberOfBytes() + 16);
             // startMessage.setPacketId(packetId);
@@ -106,7 +105,7 @@ public class RFXClient {
         }
     }
 
-    public void sendOnce(ProntoECF payload) throws DecodingException, InterruptedException {
+    public void sendOnce(ProntoECF payload, int irPort) throws DecodingException, InterruptedException {
         try {
             logger.debug("Sending one-off code");
             sock = new DatagramSocket();
@@ -121,7 +120,7 @@ public class RFXClient {
             sendAndWaitForReply(lockMessage);
 
             Start startMessage = new Start();
-            startMessage.setPort(0);
+            startMessage.setPort(irPort);
             startMessage.setPayload(payload);
             startMessage.setLength(payload.getNumberOfBytes() + 16);
             startMessage.setTimeout(SEND_ONCE);
@@ -154,7 +153,7 @@ public class RFXClient {
 
         logger.debug("Sending message " + BaseEncoding.base16().withSeparator(" ", 4).encode(binaryData));
 
-        DatagramPacket dp = new DatagramPacket(binaryData, binaryData.length, host, port);
+        DatagramPacket dp = new DatagramPacket(binaryData, binaryData.length, host, RFX_UDP_PORT);
         sock.send(dp);
 
         waitForReply(sock, packetId++);
