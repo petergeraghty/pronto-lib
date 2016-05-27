@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
 
+import org.github.prontolib.exception.ProntoException;
 import org.github.prontolib.irdata.ecf.model.CarrierSetup;
 import org.github.prontolib.irdata.ecf.model.Control;
 import org.github.prontolib.irdata.ecf.model.EndBurst;
@@ -66,16 +67,21 @@ public class ECFParser {
         return result;
     }
 
-    public byte[] serialise(ProntoECF prontoECF) throws IOException {
-        JBBPOut jbbpOut = BeginBin().Short(prontoECF.getType()).Short(prontoECF.getNumberOfBytes())
-                .Byte(prontoECF.getVersion()).Short(prontoECF.getUnknown1()).Byte(prontoECF.getUnknown2());
+    public byte[] serialise(ProntoECF prontoECF) {
+        byte[] bytes = null;
+        try {
+            JBBPOut jbbpOut = BeginBin().Short(prontoECF.getType()).Short(prontoECF.getNumberOfBytes())
+                    .Byte(prontoECF.getVersion()).Short(prontoECF.getUnknown1()).Byte(prontoECF.getUnknown2());
 
-        for (Control control : prontoECF.getControlStream()) {
-            jbbpOut = control.deserialise(jbbpOut);
+            for (Control control : prontoECF.getControlStream()) {
+                jbbpOut = control.deserialise(jbbpOut);
+            }
+
+            bytes = jbbpOut.Byte(prontoECF.getRepeatOffset()).End().toByteArray();
+        } catch (IOException e) {
+            throw new ProntoException("Could not serialise ECF data", e);
         }
-
-        return jbbpOut.Byte(prontoECF.getRepeatOffset()).End().toByteArray();
-
+        return bytes;
     }
 
 }

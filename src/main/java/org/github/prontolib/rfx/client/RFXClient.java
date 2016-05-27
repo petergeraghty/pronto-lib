@@ -4,9 +4,15 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
+import org.github.prontolib.exception.ProntoException;
 import org.github.prontolib.irdata.ecf.model.ProntoECF;
 import org.github.prontolib.irdata.ecf.parser.ECFParser;
 import org.github.prontolib.rfx.message.Continue;
@@ -20,10 +26,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.io.BaseEncoding;
-import com.google.common.io.BaseEncoding.DecodingException;
 
 public class RFXClient {
 
+    private static final int RESPONSE_TIMEOUT = 2000;
+    static final int RESPONSE_TYPE_ACK = 32;
     private static final int LOCK_PERIOD_MILLIS = 30000;
     private static final int SEND_REPEAT = 1500;
     private static final int SEND_ONCE = 0;
@@ -32,159 +39,164 @@ public class RFXClient {
     private static final Logger logger = LoggerFactory.getLogger(RFXClient.class);
 
     private InetAddress host;
-    DatagramSocket sock = null;
-    int packetId = 200;
+    private int packetId = 200; // TODO, initialise to random number
+    private final ScheduledExecutorService continuationService = Executors.newScheduledThreadPool(1);
+    private ScheduledFuture<?> continuationHandler;
+    private int startPacketId;
+    private final String lockName;
 
-    public RFXClient(String hostName) {
+    public RFXClient(String lockName, String hostName) {
+        this(lockName, hostName, new InetAddressResolver());
+    }
+
+    public RFXClient(String lockName, String hostName, InetAddressResolver addressResolver) {
+        this.lockName = lockName;
         try {
-            host = InetAddress.getByName(hostName);
+            host = addressResolver.getByName(hostName);
         } catch (UnknownHostException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            throw new ProntoException(String.format("Could not find Pronto Extender %s", hostName), e);
         }
     }
 
-    public void send(ProntoECF payload, int irPort) throws InterruptedException, IOException {
+    public void sendOnce(ProntoECF payload, int irPort) {
+        logger.debug("Sending one-off code");
+
+        lock();
+
+        start(payload, irPort, SEND_ONCE);
+
+        unlock();
+    }
+
+    public void startSending(ProntoECF payload, int irPort) {
         logger.debug("Sending ECF payload "
                 + BaseEncoding.base16().withSeparator(" ", 4).encode(new ECFParser().serialise(payload)));
 
-        try {
-            // TODO - break up into startSend() and stopSend()
-            sock = new DatagramSocket();
+        lock();
 
-            sock.setSoTimeout(1000);
+        startPacketId = packetId;
+        start(payload, irPort, SEND_REPEAT);
 
-            Lock lockMessage = new Lock();
-            lockMessage.setTimeout(LOCK_PERIOD_MILLIS);
-            lockMessage.setOwner("pete");
-            lockMessage.setLength(13);
-            lockMessage.setPacketId(packetId);
-
-            sendAndWaitForReply(lockMessage);
-
-            int startPacketId = packetId;
-            Start startMessage = new Start();
-            startMessage.setPort(irPort);
-            startMessage.setPayload(payload);
-            startMessage.setLength(payload.getNumberOfBytes() + 16);
-            // startMessage.setPacketId(packetId);
-            startMessage.setTimeout(SEND_REPEAT); // set zero for no repeat
-
-            sendAndWaitForReply(startMessage);
-
-            for (int i = 0; i < 5; i++) {
-                Thread.sleep(1000);
+        final Runnable sendContinueMessage = new Runnable() {
+            @Override
+            public void run() {
                 Continue continueMessage = new Continue();
                 continueMessage.setTimeout(SEND_REPEAT);
                 continueMessage.setResumeId(startPacketId);
 
                 sendAndWaitForReply(continueMessage);
             }
+        };
 
-            Thread.sleep(1000);
+        continuationHandler = continuationService.scheduleAtFixedRate(sendContinueMessage, 1, 1, TimeUnit.SECONDS);
+    }
+
+    public void stopSending() {
+        continuationService.shutdown();
+        try {
+            Thread.sleep(1000); // TODO, shouldn't be waiting before sending stop message
 
             Stop stopMessage = new Stop();
             stopMessage.setStartId(startPacketId);
-            stopMessage.setPacketId(packetId);
 
             sendAndWaitForReply(stopMessage);
 
-            Unlock unlockMessage = new Unlock();
-            unlockMessage.setOwner("pete");
-            unlockMessage.setLength(9);
-            unlockMessage.setPacketId(packetId);
+            Thread.sleep(1000);
 
-            sendAndWaitForReply(unlockMessage);
-
-            sock.close();
-
-        }
-
-        catch (IOException e) {
-            System.err.println("IOException " + e);
+            unlock();
+        } catch (InterruptedException e) {
+            throw new ProntoException("Could not send stop message to extender", e);
         }
     }
 
-    public void sendOnce(ProntoECF payload, int irPort) throws DecodingException, InterruptedException {
+    protected void start(ProntoECF payload, int irPort, int timeout) {
+        Start startMessage = new Start();
+        startMessage.setPort(irPort);
+        startMessage.setPayload(payload);
+        startMessage.setLength(payload.getNumberOfBytes() + 16);
+        startMessage.setTimeout(timeout);
+
+        logger.debug("Start sending payload: "
+                + BaseEncoding.base16().withSeparator(" ", 4).encode(new ECFParser().serialise(payload)));
+
+        sendAndWaitForReply(startMessage);
+    }
+
+    protected void lock() {
+        Lock lockMessage = new Lock();
+        lockMessage.setTimeout(LOCK_PERIOD_MILLIS);
+        lockMessage.setOwner(lockName);
+        lockMessage.setLength(13);
+
+        sendAndWaitForReply(lockMessage);
+    }
+
+    protected void unlock() {
+        Unlock unlockMessage = new Unlock();
+        unlockMessage.setOwner(lockName);
+        unlockMessage.setLength(9);
+
+        sendAndWaitForReply(unlockMessage);
+    }
+
+    protected void sendAndWaitForReply(Message message) {
+        DatagramSocket socket;
         try {
-            logger.debug("Sending one-off code");
-            sock = new DatagramSocket();
+            socket = datagramSocket();
 
-            sock.setSoTimeout(1000);
+            message.setPacketId(packetId);
 
-            Lock lockMessage = new Lock();
-            lockMessage.setTimeout(LOCK_PERIOD_MILLIS);
-            lockMessage.setOwner("pete");
-            lockMessage.setLength(13);
+            byte[] binaryData = message.serialise();
 
-            sendAndWaitForReply(lockMessage);
+            logger.debug("Sending message " + BaseEncoding.base16().withSeparator(" ", 4).encode(binaryData));
 
-            Start startMessage = new Start();
-            startMessage.setPort(irPort);
-            startMessage.setPayload(payload);
-            startMessage.setLength(payload.getNumberOfBytes() + 16);
-            startMessage.setTimeout(SEND_ONCE);
+            DatagramPacket dp = new DatagramPacket(binaryData, binaryData.length, host, RFX_UDP_PORT);
+            socket.send(dp);
 
-            System.out.println(BaseEncoding.base16().withSeparator(" ", 4).encode(new ECFParser().serialise(payload)));
+            waitForReply(socket, packetId++);
 
-            sendAndWaitForReply(startMessage);
-
-            // Thread.sleep(1000);
-
-            Unlock unlockMessage = new Unlock();
-            unlockMessage.setOwner("pete");
-            unlockMessage.setLength(9);
-
-            sendAndWaitForReply(unlockMessage);
-
-            sock.close();
-
-        }
-
-        catch (IOException e) {
-            System.err.println("IOException " + e);
+            socket.close();
+        } catch (IOException e) {
+            throw new ProntoException("Could not send message to extender", e);
         }
     }
 
-    private void sendAndWaitForReply(Message message) throws IOException, DecodingException {
-        message.setPacketId(packetId);
+    protected void waitForReply(DatagramSocket sock, int packetId) {
+        try {
+            long start = System.currentTimeMillis();
+            while (System.currentTimeMillis() - start < RESPONSE_TIMEOUT) {
+                byte[] buffer = new byte[20]; // TODO, what is maximum size reply?
+                DatagramPacket reply = new DatagramPacket(buffer, buffer.length);
+                sock.receive(reply);
 
-        byte[] binaryData = message.serialise();
+                Response response = Response.deserialise(reply.getData());
 
-        logger.debug("Sending message " + BaseEncoding.base16().withSeparator(" ", 4).encode(binaryData));
+                logger.debug("Got response "
+                        + BaseEncoding.base16().withSeparator(" ", 4).encode(Arrays.copyOf(reply.getData(), 20)));
 
-        DatagramPacket dp = new DatagramPacket(binaryData, binaryData.length, host, RFX_UDP_PORT);
-        sock.send(dp);
+                logger.debug("Response type " + response.getType());
+                boolean idMatch = packetId == response.getPacketId();
 
-        waitForReply(sock, packetId++);
+                if (!idMatch) {
+                    logger.debug(String.format("Did not match packet ids, wanted %s but was %s", packetId,
+                            response.getPacketId()));
+                }
 
+                if (idMatch && response.getType() == RESPONSE_TYPE_ACK) {
+                    return;
+                }
+            }
+        } catch (IOException e) {
+            throw new ProntoException("Failed to receive reply from extender", e);
+        }
+
+        throw new ProntoException("Did not get response from extender after waiting for %s milliseconds");
     }
 
-    private static void waitForReply(DatagramSocket sock, int packetId) throws IOException, DecodingException {
-        long start = System.currentTimeMillis();
-        while (true) {
-            // TODO throw exception on timeout
-            byte[] buffer = new byte[20]; // TODO, what is maximum size reply?
-            DatagramPacket reply = new DatagramPacket(buffer, buffer.length);
-            sock.receive(reply);
-
-            Response response = Response.deserialise(reply.getData());
-
-            logger.debug("Got response "
-                    + BaseEncoding.base16().withSeparator(" ", 4).encode(Arrays.copyOf(reply.getData(), 20)));
-
-            logger.debug("Response type " + response.getType());
-            boolean idMatch = packetId == response.getPacketId();
-
-            if (!idMatch) {
-                logger.debug(String.format("Did not match packet ids, wanted %s but was %s", packetId,
-                        response.getPacketId()));
-            }
-
-            if ((idMatch && response.getType() == 32) || (System.currentTimeMillis() - start) > 2000) {
-                break;
-            }
-        }
+    protected DatagramSocket datagramSocket() throws SocketException {
+        DatagramSocket sock = new DatagramSocket();
+        sock.setSoTimeout(1000);
+        return sock;
     }
 
 }

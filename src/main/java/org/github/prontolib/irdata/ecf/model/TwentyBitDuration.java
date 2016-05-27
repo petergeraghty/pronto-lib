@@ -18,6 +18,7 @@ public abstract class TwentyBitDuration extends Control {
     }
 
     @Override
+    // TODO - should this be "serialise"?
     public JBBPOut deserialise(JBBPOut jbbpOut) throws IOException {
         byte[] array = BeginBin().Int((type() << 20) + getDuration()).End().toByteArray();
         return jbbpOut.Byte(array[1]).Byte(array[2]).Byte(array[3]);

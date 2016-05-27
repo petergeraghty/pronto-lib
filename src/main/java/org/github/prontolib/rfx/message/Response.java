@@ -1,17 +1,21 @@
 package org.github.prontolib.rfx.message;
 
+import static com.igormaznitsa.jbbp.io.JBBPOut.BeginBin;
+
 import java.io.IOException;
 
 import com.igormaznitsa.jbbp.JBBPParser;
+import com.igormaznitsa.jbbp.io.JBBPOut;
 import com.igormaznitsa.jbbp.model.JBBPFieldStruct;
 import com.igormaznitsa.jbbp.model.JBBPFieldUByte;
+import com.igormaznitsa.jbbp.model.JBBPFieldUShort;
 
 public class Response {
 
-    // 16 bits
+    // 8 bits
     private int unknown1;
 
-    // 8 bits
+    // 16 bits
     private int packetId;
 
     // 8 bits
@@ -34,19 +38,22 @@ public class Response {
 
     public static Response deserialise(byte[] data) throws IOException {
         final JBBPParser responseParser = JBBPParser
-                .prepare("ushort unknown1;" + "ubyte packetId; " + "ubyte type; " + "ushort unknown3; "
+                .prepare("ubyte unknown1;" + "ushort packetId; " + "ubyte type; " + "ushort unknown3; "
                         + "ushort unknown4; " + "ushort unknown5; " + "ushort unknown6; " + "ushort unknown7; ");
 
         final JBBPFieldStruct result = responseParser.parse(data);
         Response response = new Response();
-        response.setPacketId(result.findFieldForNameAndType("packetId", JBBPFieldUByte.class).getAsInt());
+        response.setPacketId(result.findFieldForNameAndType("packetId", JBBPFieldUShort.class).getAsInt());
         response.setType(result.findFieldForNameAndType("type", JBBPFieldUByte.class).getAsInt());
         return response;
     }
 
-    public byte[] serialise() {
-        // TODO Auto-generated method stub
-        return null;
+    public byte[] serialise() throws IOException {
+        System.out.println("!! packetId " + packetId);
+        JBBPOut jbbpOut = BeginBin().Byte(unknown1).Short(packetId).Byte(type).Short(unknown3).Short(unknown4)
+                .Short(unknown5).Short(unknown6).Short(unknown7);
+
+        return jbbpOut.End().toByteArray();
     }
 
     public int getUnknown1() {

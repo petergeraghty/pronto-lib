@@ -1,10 +1,11 @@
 package org.github.prontolib.irdata.ecf.parser;
 
+import org.junit.Before;
+import org.junit.Test;
+
 import com.google.common.io.BaseEncoding;
 
-import junit.framework.TestCase;
-
-public class ECFParserTest extends TestCase {
+public class ECFParserTest {
 
     private String ECF_SONY_MUTE = "ffff 0060 0100 0008 0a04 da61 d1c0 4074 7a60 7470 4074 6060 7470 4074 6060 e8e0 4074 8a60 7470 4074 6060 e8e0 4074 8a60 7470 4074 6060 7470 4074 6060 e8e0 4074 8a60 7470 4074 6060 7470 4074 6060 7470 4074 6060 7470 5050 0040 0016 c300 0000";
 
@@ -12,17 +13,19 @@ public class ECFParserTest extends TestCase {
 
     private ECFParser testObj;
 
-    @Override
-    protected void setUp() throws Exception {
+    @Before
+    public void setUp() throws Exception {
         testObj = new ECFParser();
     }
 
+    @Test
     public void testDeserialiseConverted() throws Exception {
         byte[] binaryData = BaseEncoding.base16().decode(ECF_SONY_MUTE.replaceAll("\\s+", "").toUpperCase());
         testObj.deserialise(binaryData);
 
     }
 
+    @Test
     public void testDeserialiseLearned() throws Exception {
         byte[] binaryData = BaseEncoding.base16().decode(ECF_LEARNED_SONY_MUTE.replaceAll("\\s+", "").toUpperCase());
         testObj.deserialise(binaryData);
