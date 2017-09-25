@@ -29,4 +29,7 @@ No, seriously. There's lots of remote control apps for phones/tablets but none o
 Well, that's the goal. At the moment there is basic support for sending IR commands. Serial is a work in progress. There is no REST api. But there is a basic understanding of the protocol, which brings us to
 
 ## The protocol
-Reverse engineering of the protocol is described in [this](https://gist.github.com/petergeraghty/666c52d8215c7f56429d) and [that](https://gist.github.com/petergeraghty/3b430fe1dbf31f22a7e0) gist. Once the process is complete the findings will be compiled into a single document
+For those who enjoy reading dumps of UDP packets, reverse engineering of the protocol is described in [this](https://gist.github.com/petergeraghty/666c52d8215c7f56429d) and [that](https://gist.github.com/petergeraghty/3b430fe1dbf31f22a7e0) gist. Once the process is complete the findings will be compiled into a single document
+
+## Test harness
+In addition to the unit tests for the code there are a number of integration tests to verify behaviour when connecting to the RFX hardware. The integration tests are disabled by default because they require an actual, physical test harness and also an RFX unit. Basically a Raspberry Pi is hooked up the one of the IR ports on the RFX9600 (via an optocoupler) and also one of the serial ports. Socat is used to expose the data received by these ports when the tests run, which can then be read and verified by the tests.
