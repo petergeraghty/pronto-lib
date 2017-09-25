@@ -49,7 +49,6 @@ public class Response {
     }
 
     public byte[] serialise() throws IOException {
-        System.out.println("!! packetId " + packetId);
         JBBPOut jbbpOut = BeginBin().Byte(unknown1).Short(packetId).Byte(type).Short(unknown3).Short(unknown4)
                 .Short(unknown5).Short(unknown6).Short(unknown7);
 

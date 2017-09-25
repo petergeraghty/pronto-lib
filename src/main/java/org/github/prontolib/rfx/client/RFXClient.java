@@ -15,12 +15,17 @@ import java.util.concurrent.TimeUnit;
 import org.github.prontolib.exception.ProntoException;
 import org.github.prontolib.irdata.ecf.model.ProntoECF;
 import org.github.prontolib.irdata.ecf.parser.ECFParser;
+import org.github.prontolib.rfx.message.BaudRate;
 import org.github.prontolib.rfx.message.Continue;
+import org.github.prontolib.rfx.message.DataBits;
 import org.github.prontolib.rfx.message.Lock;
 import org.github.prontolib.rfx.message.Message;
+import org.github.prontolib.rfx.message.Parity;
 import org.github.prontolib.rfx.message.Response;
+import org.github.prontolib.rfx.message.Serial;
 import org.github.prontolib.rfx.message.Start;
 import org.github.prontolib.rfx.message.Stop;
+import org.github.prontolib.rfx.message.StopBits;
 import org.github.prontolib.rfx.message.Unlock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +61,20 @@ public class RFXClient {
         } catch (UnknownHostException e) {
             throw new ProntoException(String.format("Could not find Pronto Extender %s", hostName), e);
         }
+    }
+
+    public void sendSerial(byte[] payload, int serialPort) {
+        Serial serial = new Serial();
+        serial.setPacketId(1);
+        serial.setPayload(payload);
+        serial.setLength(payload.length + 16);
+        serial.setPort(serialPort);
+        serial.setRate(BaudRate.RATE_19200);
+        serial.setStopBits(StopBits.ONE);
+        serial.setParity(Parity.NONE);
+        serial.setDataBits(DataBits.EIGHT);
+
+        sendAndWaitForReply(serial);
     }
 
     public void sendOnce(ProntoECF payload, int irPort) {

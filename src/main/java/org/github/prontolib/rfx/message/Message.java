@@ -44,6 +44,8 @@ public abstract class Message {
     public byte[] serialise() throws IOException {
         JBBPOut jbbpOut = BeginBin();
         buildOutput(jbbpOut);
+        // TODO - add padding here and remove superfluous fields from messages
+        // should be multiple of 4 bytes
         return jbbpOut.End().toByteArray();
     }
 

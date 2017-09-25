@@ -15,13 +15,13 @@ public class RFXClientSendOnceTestHarness {
 
     public static void main(String[] args) throws Exception {
         RFXSearcher searcher = new RFXSearcher();
-        RFXConfiguration rfxConfiguration = searcher.findExtenderWithId(0);
+        RFXConfiguration rfxConfiguration = searcher.findExtenderWithId(1);
         RFXClient client = new RFXClient("testHarness", rfxConfiguration.getIpAddress());
         byte[] binaryHexData = BaseEncoding.base16().decode(HEX_SONY_MUTE.toUpperCase().replaceAll("\\s", ""));
         ProntoHex prontoHex = new HexParser().deserialise(binaryHexData);
         ProntoECF payload = new HexToECF().convert(prontoHex);
 
-        client.sendOnce(payload, 3);
+        client.sendOnce(payload, 0);
     }
 
 }
